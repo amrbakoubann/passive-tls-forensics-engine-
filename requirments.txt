@@ -1,0 +1,5 @@
+scapy
+pandas
+numpy
+tensorflow
+scikit-learn
