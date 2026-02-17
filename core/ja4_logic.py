@@ -1,30 +1,25 @@
 import hashlib
 
-def generate_ja4(protocol, version, ciphers, extensions):
+def calculate_ja4(protocol, version, sni_mode, ciphers, extensions):
     """
     Standard JA4 Hashing Logic
-    protocol: 't' for TCP
-    version: TLS version (e.g., '13' for 1.3)
-    ciphers: list of cipher suite decimal values
-    extensions: list of extension decimal values
     """
-    
-    #  Sort values numerically (for JA4 standard)
-    ciphers.sort()
-    extensions.sort()
-    
-    #  Convert lists to comma-separated strings
-    cipher_str = ",".join(map(str, ciphers))
-    ext_str = ",".join(map(str, extensions))
-    
-    # Create SHA256 hashes of the sorted strings (truncated to 12 chars)
-    cipher_hash = hashlib.sha256(cipher_str.encode()).hexdigest()[:12]
-    ext_hash = hashlib.sha256(ext_str.encode()).hexdigest()[:12]
-    
-    #  Final JA4 String: [Protocol][Version]_[CipherHash]_[ExtensionHash]
-    ja4_fingerprint = f"{protocol}{version}_{cipher_hash}_{ext_hash}"
-    
-    return ja4_fingerprint
+    #  filter GREASE and sort
+    # GREASE values (0x?A?A) are randomized by browsers and must be ignored for stable hashes
+    def is_not_grease(val):
+        return not (val & 0x0f0f == 0x0a0a)
 
-# example  from a captured packet:
-# print(generate_ja4('t', '13', [4865, 4866, 4867], [0, 23, 65281]))
+    c_list = sorted([f"{c:04x}" for c in ciphers if is_not_grease(c)])
+    e_list = sorted([f"{e:04x}" for e in extensions if is_not_grease(e)])
+
+    # 2 Build Part A (Metadata)
+    # Format: [protocol][version][sni][cipher_count][ext_count][alpn]
+    #  '00 as a default placeholder here
+    part_a = f"{protocol}{version}{sni_mode}{len(c_list):02d}{len(e_list):02d}00"
+
+    # 3 Build Part B & C (Hashes)
+    # SHA256 hashes of the sorted lists, truncated to 12 characters
+    hash_b = hashlib.sha256(",".join(c_list).encode()).hexdigest()[:12]
+    hash_c = hashlib.sha256(",".join(e_list).encode()).hexdigest()[:12]
+
+    return f"{part_a}_{hash_b}_{hash_c}"
